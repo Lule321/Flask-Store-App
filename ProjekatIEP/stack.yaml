@@ -1,0 +1,133 @@
+version: '3'
+
+services:
+
+  authenticationDB:
+    image: mysql
+
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+      - dbdataAuth:/var/lib/mysql
+    networks:
+      - mynetAuth
+
+  authenticationDBMigration:
+    image: authenticationdbmigration
+    environment:
+      - DATABASE_URL=authenticationDB
+    networks:
+      - mynetAuth
+
+
+  authentication:
+    image: authentication
+    environment:
+      - DATABASE_URL=authenticationDB
+    networks:
+      - mynetAuth
+    ports:
+      - 5005:5005
+
+  adminer:
+    image: adminer
+    ports:
+      - 8080:8080
+    networks:
+      - mynetAuth
+      - mynetDaemon
+
+  redis:
+    image: redis
+    networks:
+      - mynetWarehouse
+      - mynetDaemon
+
+  warehouse:
+    image: warehouse
+    environment:
+      - REDIS=redis
+    networks:
+      - mynetWarehouse
+    ports:
+      - 5001:5001
+    deploy:
+      replicas: 3
+  appDB:
+    image: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+     - dbdataStore:/var/lib/mysql
+    networks:
+      - mynetDaemon
+      - mynetCustomer
+      - mynetAdmin
+
+  storeDBMigration:
+    image: storedbmigration
+    environment:
+      - DATABASE_URL=appDB
+    networks:
+      - mynetAdmin
+
+  daemon:
+    image: daemon
+    environment:
+      - DATABASE_URL=appDB
+      - REDIS=redis
+    networks:
+      - mynetDaemon
+
+  customer:
+    image: customer
+    environment:
+      - DATABASE_URL=appDB
+    networks:
+      - mynetCustomer
+    ports:
+      - 5003:5003
+    deploy:
+      replicas: 3
+
+  admin:
+    image: admin
+    environment:
+      - DATABASE_URL=appDB
+    networks:
+      - mynetAdmin
+    ports:
+      - 5004:5004
+
+  deleteauth:
+    image: deleteauth
+    environment:
+      - DATABASE_URL=authenticationDB
+    networks:
+      - mynetAuth
+
+  deletestore:
+    image: deletestore
+    environment:
+      - DATABASE_URL=appDB
+    networks:
+      - mynetAdmin
+
+
+volumes:
+  dbdataAuth:
+  dbdataStore:
+
+
+networks:
+  mynetAuth:
+    driver: overlay
+  mynetWarehouse:
+    driver: overlay
+  mynetDaemon:
+    driver: overlay
+  mynetCustomer:
+    driver: overlay
+  mynetAdmin:
+    driver: overlay
+

@@ -1,0 +1,259 @@
+docker ps -a
+docker exec -it [redis] bash
+redis-cli
+
+ALTER TABLE products AUTO_INCREMENT = 1
+
+
+--
+Docker Swarm
+
+Virtualni serveri u lokalu. Oracle Virtualbox.
+
+Powershell (admin) ->
+    cd ~/bin
+    ls
+
+    .\docker-machine.exe create manager --virtualbox-no-vtx-check
+
+    .\docker-machine.exe ls
+
+    .\docker-machine.exe ssh manager ->
+        ls
+        docker --version
+        exit
+    .\docker-machine.exe create worker0 --isto ko i za ove druge
+    .\docker-machine.exe create worker1 --isto ko i za ove druge
+
+    ping (adresa)
+
+    .\docker-machine.exe ssh manager ->
+        docker swarm init --advertise-addr 192... (ovaj postaje menadzer)
+        (dobija se token, kojim pridruzujemo cvorove)
+        docker node ls
+        docker swarm join --token
+
+        (pridruzis ostale)
+        docker node ls (trebalo bi da se vide serveri)
+        docker info
+
+        (docker swarm leave, za odlazak servera)
+
+        docker service create --name nginx --replicas 2 --publish 80:80 nginx
+        docker service ls
+        docker ps (vidi sta se izvrsava na serveru)
+
+        (ingress mreza)
+
+        docker service inspect --pretty [name]
+
+        docker service scale nginx=5 (povecanja broja replika)
+
+        docker service ps [name] (gde se koja replika izvrsava)
+
+        docker service rm [name]
+
+        docker service ls (nema tog servisa)
+        docker ps (nema nijednog kontejnera ni vamo)
+
+
+        docker service create --replicas 3 --name redis --update-delay 10s redis:3.0.6
+
+        docker service ls
+        docker service ps redis
+        docker service inspect --pretty redis
+        docker service update --image redis:3.0.7 [name]
+
+        docker service ls
+        docker node ls (gledamo AVAILABILITY)
+        docker service ps redis
+        docker node update --availability drain [id servera, node-a]
+        docker service ps redis (prebaceni su svi na druga dva node-a)
+
+        docker network ls (overlay je DRIVER - ingress je mreza, komuniciranje izmedju kontejnera)
+
+        (gde ce se sta rasporediti treba dodeliti labele)
+
+        docker node update --label-add ID=1 [nodeId]
+        docker node ls
+        docker service create --name nginx --replicas 2 --constraint node.labels.ID==1 nginx
+
+        --poslednji snimak
+        sudo su
+        cd /var/lib/boot2docker
+        ls
+        vi profile
+
+        --insecure-registry 192. opet ip i port 5000 (u okviru EXTRA_ARGS)
+
+        esc + :wq (za izlaz)
+        exit
+        pa restart .\docker-machine.exe restart manager
+        pa ponovo povezivanje
+
+        docker service create --name registry --replicas 1 --publish 5000:5000 registry:2
+
+        docker image ls
+
+        docker tag --help
+        docker tag [image-name] menadzer-addr/[image-name]
+        docker push [new-image-name]
+
+        docker pull [new-image-name]
+        docker image ls
+        docker tag [new-image-name] [old-image-name]
+        docker image ls
+
+        cp /c/Users/.../stack.yaml stack.yaml
+        cat stack.yaml
+
+        docker stack deploy --compose-file stack.yaml authentication_stack
+        docker service ls
+
+
+    .\docker-machine.exe ip worker0
+
+
+    .\docker-machine.exe ssh worker0 ->
+        docker ps
+        docker container rm [ID kontejnera] --force
+
+
+(migracije, staviti u while petlju dok se ne izvrse sve komande koje su potrebne, jer je moguce da dodje do gasenja)
+(dodati try, catch oko celog koda)
+docker, docker engine, insecure-registries : ["192. menadzerova adresa: 5000], apply and restart
+
+pristup registryju (menadzer : 5000/v2/_catalog)
+
+
+stack.yaml ->
+
+    version: '3'
+
+    services:
+        i isto ko deployment (skinuti depends on)
+
+
+        deploy:
+            replicas: 3
+
+        networks:
+            mynet:
+                driver: overlay
+
+
+Kreiranje docker image-a:
+    --Hello world image:
+        kreiraj [ime-fajla].dockerfile
+
+        FROM ubuntu
+
+        ENTRYPOINT ["echo", "Hello world!"]
+
+        konfiguracije dockerfile konf
+        nazovi image
+        # komentari
+
+
+    -- authentication image:
+
+        FROM python:3
+
+        RUN mkdir -p /opt/src/authentication
+        WORKDIR /opt/src/authentication
+
+        COPY authentication/application.py ./application.py
+        #  i za sve ostale potrebne fajlove
+
+        RUN pip install -r ./requirements.txt
+
+        ENTRYPOINT["python", "./application.py"]
+         Container i HOST port u services delu port bindings (nemoj bas na localhost, jer je loopback interfejs adresa) i host ip i onda i save
+
+         U application - host = "0.0.0.0"
+
+
+    -- baze podataka:
+        novi yaml fajl
+        deployment.yaml ->
+
+        #dodajes ovo da zna path gde da trazi module
+        ENV PYTHONPATH="/opt/src/authentication"
+
+        #u configuration
+        import os;
+
+        os.environ["DATABASE_URL"]
+
+        f"pa umetnuti {}"
+
+        Port regularni ostaje
+
+        version: '3'
+
+        services:
+            authenticationDB:
+                image: mysql
+                environment:
+                    - MYSQL_ROOT_PASSWORD=root
+
+                volumes:
+                    - dbdata:/var/lib/mysql
+
+                networks:
+                    - mynet
+
+            authenticationDBMigration:
+                image: authenticationdbmigration
+                environment:
+                    - DATABASE_URL=authenticationDB
+                #ovo ne treba na docker swarmu
+                healthcheck:
+                    test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+                    timeout: 10s
+                    retries: 10
+                depends_on:
+                    authenticationDB:
+                        condition: service_healthy
+                networks:
+                    - mynet
+
+
+            authentication:
+                image: authentication
+                environment:
+                    - DATABASE_URL=authenticationDB
+
+                depends_on:
+                    - authenticationDBMigration
+
+                networks:
+                    - mynet
+
+                ports:
+                    - 5002:5002
+        volumes:
+            dbdata:  (disk)
+            (gledamo u powershellu za virtualni disk)
+            docker volume ls treba da se odradi
+            docker volume inspect [name]
+            (u fajl explorer-u \\wsl$, docker-desktop-data, version-pack-data, community, docker, volumes)
+
+        --mreze
+
+        networks:
+            mynet:
+
+        docker network ls (listanje mreza)
+        docker network inspect [name]
+
+        pravi se migrate.py
+        novi folder data, kopiras mu apsolutnu putanju
+
+
+        docker run -dit --name alpine1 alpine ash
+        docker container ls
+        docker network inspect bridge
+        docker attach alpine1
+        ping [addr]
+        ping google.com
